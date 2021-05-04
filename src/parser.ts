@@ -32,13 +32,19 @@ type ParserState<T> = {
   recognize(p: (x: T) => boolean): T;
   accept(x: T): T;
   chain<A>(...xs: Parser<T, A>[]): A[];
-  run<A>(f: Parser<T, A>, options?: { withError?: string }): A;
+  run<A>(
+    f: Parser<T, A>,
+    options?:
+      | { withDefault: A }
+      | { withErrors: string[] }
+      | { withError: string }
+  ): A;
 };
 
 type Parser<T, U> = (p: ParserState<T>) => U;
 
 const createParser = <T>(input: Iterable<T>): ParserState<T> => {
-  let state = input[Symbol.iterator]();
+  let state = copyableIterator(input);
   const _this: ParserState<T> = {
     recognize: (p: (x: T) => boolean) => {
       const { done, value: token } = state.next();
@@ -56,24 +62,36 @@ const createParser = <T>(input: Iterable<T>): ParserState<T> => {
         withError: `Expected ${token}`,
       });
     },
-    chain: () => {
-      throw 'NOT IMPLEMENTED';
+    chain: (...parsers) => {
+      return parsers.map((p) => _this.run(p));
     },
-    run: (parser, { withError } = {}) => {
+    run: (parser, options) => {
       try {
         return parser(_this);
       } catch (errors) {
-        if (withError !== undefined) {
-          throw [...errors, withError];
+        if (options === undefined) {
+          throw errors;
         }
-        throw errors;
+
+        if ('withDefault' in options) {
+          return options.withDefault;
+        }
+
+        let accumulatedErrors = [...errors];
+        if ('withErrors' in options) {
+          accumulatedErrors = [...accumulatedErrors, ...options.withErrors];
+        }
+        if ('withError' in options) {
+          accumulatedErrors = [...accumulatedErrors, options.withError];
+        }
+        throw accumulatedErrors;
       }
     },
   };
   return _this;
 };
 
-const p = createParser('AABABBABBABABAA');
+const p = createParser('AABABBAABBABABAA');
 
 const abbaParser = (p: ParserState<string>) => {
   const a1 = p.accept('A');
@@ -88,7 +106,11 @@ const stuffParser = (p: ParserState<string>) => {
   const a2 = p.accept('A');
   const a3 = p.accept('B');
 
-  const abba = p.run(abbaParser, { withError: "Can't find abba" });
+  const abba = p.run(abbaParser, {
+    withError: "Can't find",
+  });
+
+  // const rest = p.chain(abbaParser, abbaParser);
 
   return [a, a2, a3, abba];
 };
