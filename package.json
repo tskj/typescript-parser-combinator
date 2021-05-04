@@ -1,0 +1,16 @@
+{
+  "name": "typescript-parser-combinator",
+  "version": "0.0.0",
+  "description": "",
+  "main": "src/parser.ts",
+  "scripts": {
+    "start": "nodemon --watch 'src/**' --ext 'ts,json' --exec 'ts-eager src/parser.ts'",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "nodemon": "^2.0.7",
+    "ts-eager": "^1.1.3"
+  }
+}
