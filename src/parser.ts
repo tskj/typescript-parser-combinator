@@ -5,8 +5,8 @@ const copyableIterator = <T>(iterable: Iterable<T>): CopyableIterator<T> => {
 
   const state: IteratorResult<T>[] = [];
 
-  const _this = (): CopyableIterator<T> => {
-    let i = 0;
+  const _this = (start = 0): CopyableIterator<T> => {
+    let i = start;
     return {
       next: () => {
         if (i < state.length) {
@@ -21,7 +21,7 @@ const copyableIterator = <T>(iterable: Iterable<T>): CopyableIterator<T> => {
         }
       },
       copy: () => {
-        return _this();
+        return _this(i);
       },
     };
   };
@@ -32,6 +32,7 @@ type ParserState<T> = {
   recognize(p: (x: T) => boolean): T;
   accept(x: T): T;
   chain<A>(...xs: Parser<T, A>[]): A[];
+  choice<A>(...xs: Parser<T, A>[]): A;
   run<A>(
     f: Parser<T, A>,
     options?:
@@ -63,7 +64,25 @@ const createParser = <T>(input: Iterable<T>): ParserState<T> => {
       });
     },
     chain: (...parsers) => {
-      return parsers.map((p) => _this.run(p));
+      return parsers.map((parser) => _this.run(parser));
+    },
+    choice: (...parsers) => {
+      if (parsers.length === 0) {
+        throw [
+          'You have to provide at least one parser to the `choice` method, so it has something to choose from',
+        ];
+      }
+      const [parser, ...rest] = parsers;
+      try {
+        return createParser({ [Symbol.iterator]: () => state.copy() }).run(
+          parser
+        );
+      } catch (error) {
+        return createParser({ [Symbol.iterator]: () => state.copy() }).run(
+          (p) => p.choice(...rest),
+          { withError: error }
+        );
+      }
     },
     run: (parser, options) => {
       try {
@@ -110,9 +129,15 @@ const stuffParser = (p: ParserState<string>) => {
     withError: "Can't find",
   });
 
+  const cs = p.choice(
+    (p) => p.accept('A'),
+    (p) => p.accept('B'),
+    abbaParser
+  );
+
   // const rest = p.chain(abbaParser, abbaParser);
 
-  return [a, a2, a3, abba];
+  return [a, a2, a3, abba, cs];
 };
 
 console.log(p.run(stuffParser));
