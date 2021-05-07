@@ -37,6 +37,7 @@ type ParserState<T> = {
     f: Parser<T, A>,
     options?:
       | { withDefault: A }
+      | { replaceErrors: string[] }
       | { withErrors: string[] }
       | { withError: string }
   ): A;
@@ -74,11 +75,9 @@ const createParser = <T>(input: Iterable<T>): ParserState<T> => {
       }
       const [parser, ...rest] = parsers;
       try {
-        return createParser({ [Symbol.iterator]: () => state.copy() }).run(
-          parser
-        );
+        return createParser({ [Symbol.iterator]: state.copy }).run(parser);
       } catch (error) {
-        return createParser({ [Symbol.iterator]: () => state.copy() }).run(
+        return createParser({ [Symbol.iterator]: state.copy }).run(
           (p) => p.choice(...rest),
           { withError: error }
         );
@@ -96,7 +95,9 @@ const createParser = <T>(input: Iterable<T>): ParserState<T> => {
           return options.withDefault;
         }
 
-        let accumulatedErrors = [...errors];
+        let accumulatedErrors =
+          'replaceErrors' in options ? options.replaceErrors : errors;
+
         if ('withErrors' in options) {
           accumulatedErrors = [...accumulatedErrors, ...options.withErrors];
         }
