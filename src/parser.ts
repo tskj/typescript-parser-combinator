@@ -1,5 +1,3 @@
-import { option } from 'higher-order-decoders';
-
 type CopyableIterator<T> = Iterator<T> & { copy: () => CopyableIterator<T> };
 
 const copyableIterator = <T>(iterable: Iterable<T>): CopyableIterator<T> => {
@@ -55,10 +53,10 @@ type ParserState<T> = {
 type Parser<T, U> = (p: ParserState<T>) => U;
 
 const createParser = <T>(input: Iterable<T>): ParserState<T> => {
-  let state = copyableIterator(input);
-  const _this: ParserState<T> = {
+  let stream = copyableIterator(input);
+  const s: ParserState<T> = {
     recognize: (p: (x: T) => boolean) => {
-      const { done, value: token } = state.next();
+      const { done, value: token } = stream.next();
       if (done) {
         throw [`Expected token, but reached end of input`];
       }
@@ -69,58 +67,58 @@ const createParser = <T>(input: Iterable<T>): ParserState<T> => {
       }
     },
     accept: (token: T) => {
-      return _this.run((p) => p.recognize((x) => x === token), {
+      return s.run((s) => s.recognize((x) => x === token), {
         withError: `Expected ${token}`,
       });
     },
 
     chain: (...parsers) => {
-      return parsers.map((parser) => _this.run(parser));
+      return parsers.map((parser) => s.run(parser));
     },
     choice: (...parsers) => {
       if (parsers.length === 0) {
         throw [];
       }
       const [parser, ...rest] = parsers;
-      return _this.run(parser, {
-        bindError: (errors) => (p) =>
-          p.run((p) => p.choice(...rest), { withErrors: errors }),
+      return s.run(parser, {
+        bindError: (errors) => (s) =>
+          s.run((s) => s.choice(...rest), { withErrors: errors }),
       });
     },
 
     option: (parser) => {
-      return _this.run(
-        (p) => {
-          const parsed = p.run(parser);
+      return s.run(
+        (s) => {
+          const parsed = s.run(parser);
           return [parsed];
         },
         {
-          bindError: (errors) => (p) => [],
+          bindError: (errors) => (s) => [],
         }
       );
     },
     many: (parser) => {
-      return _this.run((p) => p.repeat(parser), {
-        bindError: (errors) => (p) => [],
+      return s.run((s) => s.repeat(parser), {
+        bindError: (errors) => (s) => [],
       });
     },
     repeat: (parser) => {
-      const parsed = _this.run(parser);
-      const restParsed = _this.many(parser);
+      const parsed = s.run(parser);
+      const restParsed = s.many(parser);
       return [parsed, ...restParsed];
     },
 
     run: (parser, options) => {
       try {
-        parser(createParser({ [Symbol.iterator]: state.copy }));
-        return parser(_this);
+        parser(createParser({ [Symbol.iterator]: stream.copy }));
+        return parser(s);
       } catch (errors) {
         if (options === undefined) {
           throw errors;
         }
 
         if ('bindError' in options) {
-          return options.bindError(errors)(_this);
+          return options.bindError(errors)(s);
         }
 
         if ('withDefault' in options) {
@@ -140,44 +138,44 @@ const createParser = <T>(input: Iterable<T>): ParserState<T> => {
       }
     },
   };
-  return _this;
+  return s;
 };
 
-const p = createParser('AABABBAABBABABAA');
+const s = createParser('AABABBAABBABABAA');
 
-const abbaParser = (p: ParserState<string>) => {
-  const a1 = p.accept('A');
-  const b1 = p.accept('B');
-  const b2 = p.accept('B');
-  const a2 = p.accept('A');
+const abbaParser = (s: ParserState<string>) => {
+  const a1 = s.accept('A');
+  const b1 = s.accept('B');
+  const b2 = s.accept('B');
+  const a2 = s.accept('A');
   return a1.concat(b1).concat(b2).concat(a2);
 };
 
-const stuffParser = (p: ParserState<string>) => {
-  const a = p.accept('A');
-  const a2 = p.accept('A');
-  const a3 = p.accept('B');
+const stuffParser = (s: ParserState<string>) => {
+  const a = s.accept('A');
+  const a2 = s.accept('A');
+  const a3 = s.accept('B');
 
-  const abba = p.run(abbaParser, {
+  const abba = s.run(abbaParser, {
     withError: "Can't find",
   });
 
-  const cs = p.choice(
-    (p) => p.accept('B'),
-    (p) => p.accept('A'),
+  const cs = s.choice(
+    (s) => s.accept('B'),
+    (s) => s.accept('A'),
     abbaParser
   );
 
-  const bs = p.repeat((p) => p.accept('B'));
-  const none = p.many((p) => p.accept('B'));
-  const as = p.many((p) => p.accept('A'));
+  const bs = s.repeat((s) => s.accept('B'));
+  const none = s.many((s) => s.accept('B'));
+  const as = s.many((s) => s.accept('A'));
 
-  const noA = p.option((p) => p.accept('A'));
-  const anB = p.option((p) => p.accept('B'));
+  const noA = s.option((s) => s.accept('A'));
+  const anB = s.option((s) => s.accept('B'));
 
   // const rest = p.chain(abbaParser, abbaParser);
 
   return [a, a2, a3, abba, cs, bs, none, as, noA, anB];
 };
 
-console.log(p.run(stuffParser));
+console.log(s.run(stuffParser));
