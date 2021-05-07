@@ -31,8 +31,13 @@ const copyableIterator = <T>(iterable: Iterable<T>): CopyableIterator<T> => {
 type ParserState<T> = {
   recognize(p: (x: T) => boolean): T;
   accept(x: T): T;
-  chain<A>(...xs: Parser<T, A>[]): A[];
-  choice<A>(...xs: Parser<T, A>[]): A;
+
+  chain<A>(...parsers: Parser<T, A>[]): A[];
+  choice<A>(...parsers: Parser<T, A>[]): A;
+
+  many<A>(parser: Parser<T, A>): A[];
+  repeat<A>(parser: Parser<T, A>): A[];
+
   run<A>(
     f: Parser<T, A>,
     options?:
@@ -64,6 +69,7 @@ const createParser = <T>(input: Iterable<T>): ParserState<T> => {
         withError: `Expected ${token}`,
       });
     },
+
     chain: (...parsers) => {
       return parsers.map((parser) => _this.run(parser));
     },
@@ -73,16 +79,30 @@ const createParser = <T>(input: Iterable<T>): ParserState<T> => {
       }
       const [parser, ...rest] = parsers;
       try {
-        return createParser({ [Symbol.iterator]: state.copy }).run(parser);
+        createParser({ [Symbol.iterator]: state.copy }).run(parser);
+        return _this.run(parser);
       } catch (error) {
-        return createParser({ [Symbol.iterator]: state.copy }).run(
-          (p) => p.choice(...rest),
-          { withError: error }
-        );
+        return _this.run((p) => p.choice(...rest), { withError: error });
       }
     },
+
+    many: (parser) => {
+      try {
+        createParser({ [Symbol.iterator]: state.copy }).repeat(parser);
+        return _this.repeat(parser);
+      } catch {
+        return [];
+      }
+    },
+    repeat: (parser) => {
+      const parsed = _this.run(parser);
+      const restParsed = _this.many(parser);
+      return [parsed, ...restParsed];
+    },
+
     run: (parser, options) => {
       try {
+        parser(createParser({ [Symbol.iterator]: state.copy }));
         return parser(_this);
       } catch (errors) {
         if (options === undefined) {
@@ -134,9 +154,13 @@ const stuffParser = (p: ParserState<string>) => {
     abbaParser
   );
 
+  const bs = p.repeat((p) => p.accept('B'));
+  const none = p.many((p) => p.accept('B'));
+  const as = p.many((p) => p.accept('A'));
+
   // const rest = p.chain(abbaParser, abbaParser);
 
-  return [a, a2, a3, abba, cs];
+  return [a, a2, a3, abba, cs, bs, none, as];
 };
 
 console.log(p.run(stuffParser));
