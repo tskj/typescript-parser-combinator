@@ -69,9 +69,7 @@ const createParser = <T>(input: Iterable<T>): ParserState<T> => {
     },
     choice: (...parsers) => {
       if (parsers.length === 0) {
-        throw [
-          'You have to provide at least one parser to the `choice` method, so it has something to choose from',
-        ];
+        throw [];
       }
       const [parser, ...rest] = parsers;
       try {
