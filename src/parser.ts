@@ -1,3 +1,5 @@
+import { option } from 'higher-order-decoders';
+
 type CopyableIterator<T> = Iterator<T> & { copy: () => CopyableIterator<T> };
 
 const copyableIterator = <T>(iterable: Iterable<T>): CopyableIterator<T> => {
@@ -35,6 +37,7 @@ type ParserState<T> = {
   chain<A>(...parsers: Parser<T, A>[]): A[];
   choice<A>(...parsers: Parser<T, A>[]): A;
 
+  option<A>(parser: Parser<T, A>): A[];
   many<A>(parser: Parser<T, A>): A[];
   repeat<A>(parser: Parser<T, A>): A[];
 
@@ -45,6 +48,7 @@ type ParserState<T> = {
       | { replaceErrors: string[] }
       | { withErrors: string[] }
       | { withError: string }
+      | { bindError: (errors: string[]) => Parser<T, A> }
   ): A;
 };
 
@@ -78,21 +82,27 @@ const createParser = <T>(input: Iterable<T>): ParserState<T> => {
         throw [];
       }
       const [parser, ...rest] = parsers;
-      try {
-        createParser({ [Symbol.iterator]: state.copy }).run(parser);
-        return _this.run(parser);
-      } catch (error) {
-        return _this.run((p) => p.choice(...rest), { withError: error });
-      }
+      return _this.run(parser, {
+        bindError: (errors) => (p) =>
+          p.run((p) => p.choice(...rest), { withErrors: errors }),
+      });
     },
 
+    option: (parser) => {
+      return _this.run(
+        (p) => {
+          const parsed = p.run(parser);
+          return [parsed];
+        },
+        {
+          bindError: (errors) => (p) => [],
+        }
+      );
+    },
     many: (parser) => {
-      try {
-        createParser({ [Symbol.iterator]: state.copy }).repeat(parser);
-        return _this.repeat(parser);
-      } catch {
-        return [];
-      }
+      return _this.run((p) => p.repeat(parser), {
+        bindError: (errors) => (p) => [],
+      });
     },
     repeat: (parser) => {
       const parsed = _this.run(parser);
@@ -107,6 +117,10 @@ const createParser = <T>(input: Iterable<T>): ParserState<T> => {
       } catch (errors) {
         if (options === undefined) {
           throw errors;
+        }
+
+        if ('bindError' in options) {
+          return options.bindError(errors)(_this);
         }
 
         if ('withDefault' in options) {
@@ -149,8 +163,8 @@ const stuffParser = (p: ParserState<string>) => {
   });
 
   const cs = p.choice(
-    (p) => p.accept('A'),
     (p) => p.accept('B'),
+    (p) => p.accept('A'),
     abbaParser
   );
 
@@ -158,9 +172,12 @@ const stuffParser = (p: ParserState<string>) => {
   const none = p.many((p) => p.accept('B'));
   const as = p.many((p) => p.accept('A'));
 
+  const noA = p.option((p) => p.accept('A'));
+  const anB = p.option((p) => p.accept('B'));
+
   // const rest = p.chain(abbaParser, abbaParser);
 
-  return [a, a2, a3, abba, cs, bs, none, as];
+  return [a, a2, a3, abba, cs, bs, none, as, noA, anB];
 };
 
 console.log(p.run(stuffParser));
